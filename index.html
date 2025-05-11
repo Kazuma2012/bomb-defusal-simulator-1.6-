@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>爆弾解除ゲーム</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background-color: #111;
+      color: #0f0;
+      font-family: 'Orbitron', monospace;
+      text-align: center;
+      padding: 20px;
+    }
+
+    #timer {
+      font-size: 30px;
+      color: #0f0;
+      background-color: #000;
+      border: none;
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      text-shadow: 0 0 5px #0f0, 0 0 10px #0f0;
+      letter-spacing: 4px;
+      position: absolute;
+      top: 440px;
+      left: 535.5px;
+      width: 120px;
+      text-align: center;
+      z-index: 10;
+      font-family: 'Orbitron', monospace;
+    }
+
+    #gameCanvas {
+      background: url('https://www.illust-box.jp/db_img/sozai/00007/72064/watermark.jpg');
+      background-size: cover;
+      border: 4px solid #333;
+      display: block;
+      margin: 20px auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    input, button {
+      font-size: 18px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      margin: 10px;
+    }
+
+    #message {
+      font-size: 32px;
+      color: red;
+      font-weight: bold;
+      margin-top: 20px;
+    }
+
+    .wire-button {
+      font-size: 20px;
+      font-weight: bold;
+      margin: 8px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .blue { background-color: deepskyblue; color: black; }
+    .yellow { background-color: gold; color: black; }
+    .orange { background-color: orange; color: black; }
+    .purple { background-color: purple; color: white; }
+    .black { background-color: black; color: white; }
+    .darkblue { background-color: navy; color: white; }
+
+    #flashOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: red;
+      opacity: 0;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    #redLamp {
+      position: absolute;
+      top: 452px;
+      left: 501px;
+      width: 20px;
+      height: 20px;
+      background-color: red;
+      border-radius: 50%;
+      box-shadow: 0 0 10px red;
+      opacity: 1;
+      z-index: 11;
+    }
+  </style>
+</head>
+<body>
+  <h1>💣 爆弾解除シミュレーター</h1>
+  <label>タイマー（秒）:
+    <input type="number" id="timeInput" min="1" max="1800" value="15">
+  </label>
+  <button onclick="startGame()">スタート</button>
+  <div id="timer">--</div>
+  <canvas id="gameCanvas" width="600" height="400"></canvas>
+  <div>
+    <button class="wire-button blue" onclick="cutWire('blue')">水色のコード</button>
+    <button class="wire-button yellow" onclick="cutWire('yellow')">黄のコード</button>
+    <button class="wire-button orange" onclick="cutWire('orange')">オレンジのコード</button>
+    <button class="wire-button purple" onclick="cutWire('purple')">紫のコード</button>
+    <button class="wire-button black" onclick="cutWire('black')">黒のコード</button>
+    <button class="wire-button darkblue" onclick="cutWire('darkblue')">青のコード</button>
+  </div>
+  <div id="message"></div>
+  <div id="flashOverlay"></div>
+  <div id="redLamp"></div>
+
+  <audio id="beep" src="https://soundeffect-lab.info/sound/voice/mp3/system45.mp3"></audio>
+  <audio id="cut" src="https://soundeffect-lab.info/sound/various/mp3/scissors1.mp3"></audio>
+  <audio id="explode" src="https://soundeffect-lab.info/sound/battle/mp3/explosion1.mp3"></audio>
+  <audio id="success" src="https://soundeffect-lab.info/sound/voice/mp3/system49.mp3"></audio>
+
+  <script>
+    const timerEl = document.getElementById('timer');
+    const msgEl = document.getElementById('message');
+    const inputEl = document.getElementById('timeInput');
+    const flashOverlay = document.getElementById('flashOverlay');
+    const redLamp = document.getElementById('redLamp');
+
+    const sound = {
+      beep: document.getElementById('beep'),
+      cut: document.getElementById('cut'),
+      explode: document.getElementById('explode'),
+      success: document.getElementById('success')
+    };
+
+    function playSound(name) {
+      if (sound[name]) {
+        sound[name].currentTime = 0;
+        sound[name].play();
+      }
+    }
+
+    let correctSequence = [];
+    let cutIndex = 0;
+    let timeLeft = 0;
+    let timer = null;
+    let isGameOver = false;
+
+    function startGame() {
+      isGameOver = false;
+      msgEl.textContent = '';
+      flashOverlay.style.opacity = 0;
+      redLamp.style.opacity = 1;
+
+      timeLeft = parseInt(inputEl.value);
+      if (isNaN(timeLeft) || timeLeft < 1 || timeLeft > 1800) {
+        alert("1〜1800秒（1秒〜30分）の間で設定してね！");
+        return;
+      }
+
+      const wireColors = ['blue', 'yellow', 'orange', 'purple', 'black', 'darkblue'];
+      correctSequence = shuffleArray(wireColors).slice(0, 3);
+      cutIndex = 0;
+
+      console.log("正解の順番: ", correctSequence);
+
+      let minutes = Math.floor(timeLeft / 60);
+      let seconds = timeLeft % 60;
+
+      minutes = minutes < 10 ? '0' + minutes : minutes;
+      seconds = seconds < 10 ? '0' + seconds : seconds;
+
+      timerEl.textContent = `${minutes}:${seconds}`;
+      clearInterval(timer);
+      timer = setInterval(() => {
+        if (isGameOver) return;
+        timeLeft--;
+        
+        minutes = Math.floor(timeLeft / 60);
+        seconds = timeLeft % 60;
+        minutes = minutes < 10 ? '0' + minutes : minutes;
+        seconds = seconds < 10 ? '0' + seconds : seconds;
+        
+        timerEl.textContent = `${minutes}:${seconds}`;
+        playSound("beep");
+        if (timeLeft <= 0) {
+          triggerExplosion("💥 時間切れ！爆発！");
+        }
+      }, 1000);
+    }
+
+    function cutWire(id) {
+      if (isGameOver || timeLeft <= 0) return;
+      playSound("cut");
+
+      if (id === correctSequence[cutIndex]) {
+        cutIndex++;
+        if (cutIndex >= correctSequence.length) {
+          playSound("success");
+          gameOver("🎉 成功！爆弾解除！");
+        }
+      } else {
+        triggerExplosion("💥 順番間違い！爆発！");
+      }
+    }
+
+    function triggerExplosion(message) {
+      isGameOver = true;
+      clearInterval(timer);
+
+      let flashes = 0;
+      const blink = setInterval(() => {
+        timerEl.style.visibility = (timerEl.style.visibility === 'hidden') ? 'visible' : 'hidden';
+        redLamp.style.opacity = (redLamp.style.opacity === '1') ? '0' : '1';
+        flashes++;
+        if (flashes >= 10) {
+          clearInterval(blink);
+          timerEl.style.visibility = 'visible';
+          redLamp.style.opacity = 1;
+          playSound("explode");
+          flashOverlay.style.opacity = 1;
+          setTimeout(() => flashOverlay.style.opacity = 0, 500);
+          msgEl.textContent = message;
+        }
+      }, 300);
+    }
+
+    function gameOver(message) {
+      isGameOver = true;
+      clearInterval(timer);
+      msgEl.textContent = message;
+    }
+
+    function shuffleArray(array) {
+      const arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+  </script>
+</body>
+</html>
